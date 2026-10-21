@@ -62,6 +62,15 @@ DEFAULT_CONFIG = {
 def now_iso():
     return datetime.now(timezone.utc).isoformat(timespec="seconds")
 
+def secret(name: str, default: str = "") -> str:
+    """Read a credential from Streamlit Cloud secrets, falling back to an env var."""
+    try:
+        if name in st.secrets:
+            return str(st.secrets[name])
+    except Exception:
+        pass
+    return os.getenv(name, default)
+
 def norm(value: Any) -> str:
     text = "" if value is None else str(value)
     text = text.lower().replace("’", "'").replace("ـ", "")
@@ -419,17 +428,17 @@ with st.sidebar:
     exclude_turkish = st.checkbox("Exclude Turkish-language posts", value=True, help="‘bakma’ means ‘don’t look’ in Turkish, which floods results with unrelated videos.")
     st.divider()
     st.header("YouTube collection")
-    yt_key = st.text_input("YouTube Data API key", type="password", value=os.getenv("YOUTUBE_API_KEY", ""))
+    yt_key = st.text_input("YouTube Data API key", type="password", value=secret("YOUTUBE_API_KEY"))
     yt_queries_text = st.text_area("Search queries (one per line)", value=DEFAULT_CONFIG["youtube_queries"])
     yt_max = st.slider("Results per query", min_value=5, max_value=50, value=25, step=5)
     run_yt = st.button("Search YouTube", type="primary", use_container_width=True)
     st.divider()
     st.header("TikTok collection")
     st.caption("Unofficial scraper (TikTokApi). Reads only public data, may need a proxy, and breaks when TikTok changes.")
-    tt_token = st.text_input("TikTok ms_token (from your tiktok.com cookies)", type="password", value=os.getenv("TIKTOK_MS_TOKEN", ""), help="Log into tiktok.com, open DevTools > Application > Cookies, copy the value of 'msToken'.")
+    tt_token = st.text_input("TikTok ms_token (from your tiktok.com cookies)", type="password", value=secret("TIKTOK_MS_TOKEN"), help="Log into tiktok.com, open DevTools > Application > Cookies, copy the value of 'msToken'.")
     tt_hashtags_text = st.text_area("Hashtags to scan (one per line, without #)", value=DEFAULT_CONFIG["tiktok_hashtags"])
     tt_count = st.slider("Videos per hashtag", min_value=10, max_value=100, value=30, step=10)
-    tt_proxy = st.text_input("Proxy URL (optional, recommended)", value=os.getenv("TIKTOK_PROXY", ""), placeholder="http://user:pass@host:port")
+    tt_proxy = st.text_input("Proxy URL (optional, recommended)", value=secret("TIKTOK_PROXY"), placeholder="http://user:pass@host:port")
     tt_browser = st.selectbox("Browser engine", ["webkit", "chromium", "firefox"], index=0, help="webkit is often the least detected by TikTok.")
     tt_headless = st.checkbox("Run browser headless", value=False, help="Headless is detected more easily; leave off if scrapes return empty.")
     run_tt = st.button("Scrape TikTok", use_container_width=True)
