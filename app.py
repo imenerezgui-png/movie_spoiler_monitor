@@ -1,5 +1,6 @@
 import os
 import re
+import sys
 import json
 import sqlite3
 from datetime import datetime, timezone
@@ -336,6 +337,20 @@ def youtube_search(api_key: str, query: str, max_results: int = 25):
         })
     return rows
 
+_PLAYWRIGHT_READY = set()
+
+def ensure_playwright_browser(browser: str) -> None:
+    """Download the Playwright browser binary on demand (for servers like Streamlit Cloud)."""
+    if browser in _PLAYWRIGHT_READY:
+        return
+    import subprocess
+    try:
+        subprocess.run([sys.executable, "-m", "playwright", "install", browser],
+                       check=False, capture_output=True, timeout=900)
+    except Exception:
+        pass
+    _PLAYWRIGHT_READY.add(browser)
+
 def _tiktok_row(d: dict) -> dict:
     vid = str(d.get("id", "") or "")
     author = d.get("author", {})
@@ -373,6 +388,12 @@ def tiktok_search(ms_token: str, hashtags: list[str], count: int = 30, proxy: st
             "TikTokApi is not installed. Run: pip install TikTokApi && python -m playwright install"
         )
     import asyncio
+
+    # On a headless server (e.g. Streamlit Cloud) browsers aren't bundled and
+    # there is no display, so fetch the binary on demand and force headless.
+    ensure_playwright_browser(browser)
+    if not headless and sys.platform.startswith("linux") and not os.environ.get("DISPLAY"):
+        headless = True
 
     async def _run():
         rows = []
