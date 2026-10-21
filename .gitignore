@@ -8,6 +8,10 @@ spoiler_monitor.db
 *.db
 tiktok_bakma_*.csv
 
+# Local secrets (never commit)
+tiktok_config.local
+scrape_tiktok.log
+
 # OS
 .DS_Store
 Thumbs.db

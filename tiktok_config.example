@@ -1,0 +1,6 @@
+# Copy this file to tiktok_config.local and fill in your values (that file is gitignored).
+# Get these from tiktok.com cookies: DevTools (F12) > Application > Cookies > https://www.tiktok.com
+TIKTOK_SESSIONID=
+TIKTOK_MS_TOKEN=
+# Optional residential proxy, e.g. http://user:pass@host:port
+TIKTOK_PROXY=
