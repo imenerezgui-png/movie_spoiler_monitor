@@ -80,22 +80,59 @@ TURKISH_WORDS = {
     "fragman", "fragmanı", "altyazılı", "türkçe", "türk", "bölüm", "dizi",
     "filmi", "filmin", "filmini", "konusu", "oyuncular", "sahnesi", "sonu",
     "gözlerime", "bana", "aşk", "sevgi", "duygusal", "yeni", "klip", "şarkı",
+    "sezon", "resmi", "kanal", "abone", "beğen", "yorum", "oyuncu", "sahne",
+    "benim", "senin", "onun", "bizim", "deli", "gönlüm", "kalp", "gözler",
 }
 
+# Digits used as letters (7ra9, 9atel, mta3) are a strong Tunisian Arabizi signal.
+ARABIZI_HINT = re.compile(r"[a-z][23579]|[23579][a-z]")
+
+# Accurate language detection restricted to the languages that actually occur here.
+# Loaded lazily and treated as optional so the app still runs if lingua is missing.
+_LANG_DETECTOR = None
+_LANG_READY = False
+
+def _get_detector():
+    global _LANG_DETECTOR, _LANG_READY
+    if _LANG_READY:
+        return _LANG_DETECTOR
+    _LANG_READY = True
+    try:
+        from lingua import Language, LanguageDetectorBuilder
+        _LANG_DETECTOR = LanguageDetectorBuilder.from_languages(
+            Language.TURKISH, Language.ARABIC, Language.FRENCH, Language.ENGLISH
+        ).build()
+    except Exception:
+        _LANG_DETECTOR = None
+    return _LANG_DETECTOR
+
 def is_turkish(title: str, body: str) -> bool:
-    """Heuristic Turkish detector to drop unrelated 'bakma' (Turkish for 'don't look') hits."""
+    """Drop unrelated 'bakma' (Turkish for 'don't look') hits that flood the results."""
     text = norm(f"{title} {body}")
     if not text:
         return False
     # Arabic script present -> target-language content, never treat as Turkish.
     if re.search(r"[\u0600-\u06ff]", text):
         return False
+    # Tunisian Arabizi (digits-as-letters) -> target-language content, never exclude.
+    if ARABIZI_HINT.search(text):
+        return False
     # Strong signal: Turkish-specific letters (ı, ş, ğ).
     if any(ch in TURKISH_LETTERS for ch in text):
         return True
-    # Word signal: two or more distinctive Turkish stopwords.
     words = re.findall(r"[a-zçöüışğ]+", text)
-    return sum(1 for w in words if w in TURKISH_WORDS) >= 2
+    if sum(1 for w in words if w in TURKISH_WORDS) >= 1:
+        return True
+    # Statistical detector constrained to tr/ar/fr/en handles plain-Latin titles.
+    detector = _get_detector()
+    if detector is not None and len(text) >= 5:
+        try:
+            from lingua import Language
+            if detector.detect_language_of(text) == Language.TURKISH:
+                return True
+        except Exception:
+            pass
+    return False
 
 def make_url(platform: str, video_id: str, supplied_url: str = "") -> str:
     if supplied_url and supplied_url.strip():
