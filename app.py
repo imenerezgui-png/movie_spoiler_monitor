@@ -56,6 +56,7 @@ DEFAULT_CONFIG = {
     "aliases": "BAKMA, باكما, بكمة, بكما, #BAKMA, #BakmaFilm, #Bakma, #بكمة, #بكما, Bakma film, Bakma movie, film Bakma, فيلم بكمة, فيلم بكما, فيلم باكما",
     "characters": "",
     "youtube_queries": "BAKMA film\nBAKMA spoiler\nBAKMA ending\nفيلم بكمة\nفيلم بكما\nبكمة حرق\nبكما حرق\nBAKMA 7ra9\nBakma fin du film\n#BAKMA\n#بكمة\n#بكما",
+    "tiktok_hashtags": "bakmafilm\nbakmamovie\nfilmbakma\nبكمة\nبكما\nbakma",
 }
 
 def now_iso():
@@ -326,6 +327,76 @@ def youtube_search(api_key: str, query: str, max_results: int = 25):
         })
     return rows
 
+def _tiktok_row(d: dict) -> dict:
+    vid = str(d.get("id", "") or "")
+    author = d.get("author", {})
+    if isinstance(author, dict):
+        username = author.get("uniqueId") or author.get("unique_id") or author.get("nickname") or ""
+    else:
+        username = str(author or "")
+    desc = str(d.get("desc", "") or "")
+    created = d.get("createTime") or d.get("create_time")
+    published = ""
+    if created:
+        try:
+            published = datetime.fromtimestamp(int(created), timezone.utc).isoformat(timespec="seconds")
+        except Exception:
+            published = str(created)
+    url = f"https://www.tiktok.com/@{username}/video/{vid}" if username and vid else make_url("TikTok", vid)
+    return {
+        "platform": "TikTok",
+        "platform_id": vid,
+        "url": url,
+        "creator": username,
+        "published_at": published,
+        "title": desc[:120],
+        "text": desc,
+    }
+
+def tiktok_search(ms_token: str, hashtags: list[str], count: int = 30, proxy: str = "",
+                  browser: str = "chromium", headless: bool = True):
+    """Collect recent PUBLIC videos for the given hashtags via the unofficial TikTokApi scraper.
+    Needs an ms_token cookie from a logged-in tiktok.com session and installed Playwright browsers."""
+    try:
+        from TikTokApi import TikTokApi
+    except Exception:
+        raise RuntimeError(
+            "TikTokApi is not installed. Run: pip install TikTokApi && python -m playwright install"
+        )
+    import asyncio
+
+    async def _run():
+        rows = []
+        async with TikTokApi() as api:
+            await api.create_sessions(
+                ms_tokens=[ms_token] if ms_token else None,
+                num_sessions=1,
+                sleep_after=3,
+                browser=browser,
+                headless=headless,
+                proxies=[proxy] if proxy else None,
+            )
+            for tag in hashtags:
+                name = tag.lstrip("#").strip()
+                if not name:
+                    continue
+                try:
+                    async for video in api.hashtag(name=name).videos(count=count):
+                        rows.append(_tiktok_row(video.as_dict))
+                except Exception as e:
+                    rows.append({"__error__": f"#{name}: {e}"})
+        return rows
+
+    try:
+        return asyncio.run(_run())
+    except RuntimeError:
+        # A loop may already be running in the current thread; use a fresh one.
+        loop = asyncio.new_event_loop()
+        try:
+            return loop.run_until_complete(_run())
+        finally:
+            loop.close()
+
 def load_posts():
     with sqlite3.connect(DB_PATH) as con:
         df = pd.read_sql_query("SELECT * FROM posts ORDER BY score DESC, published_at DESC", con)
@@ -354,7 +425,16 @@ with st.sidebar:
     run_yt = st.button("Search YouTube", type="primary", use_container_width=True)
     st.divider()
     st.header("TikTok collection")
-    st.info("No TikTok credentials configured? Import a CSV exported by an approved social-listening tool or collected through approved access.")
+    st.caption("Unofficial scraper (TikTokApi). Reads only public data, may need a proxy, and breaks when TikTok changes.")
+    tt_token = st.text_input("TikTok ms_token (from your tiktok.com cookies)", type="password", value=os.getenv("TIKTOK_MS_TOKEN", ""), help="Log into tiktok.com, open DevTools > Application > Cookies, copy the value of 'msToken'.")
+    tt_hashtags_text = st.text_area("Hashtags to scan (one per line, without #)", value=DEFAULT_CONFIG["tiktok_hashtags"])
+    tt_count = st.slider("Videos per hashtag", min_value=10, max_value=100, value=30, step=10)
+    tt_proxy = st.text_input("Proxy URL (optional, recommended)", value=os.getenv("TIKTOK_PROXY", ""), placeholder="http://user:pass@host:port")
+    tt_browser = st.selectbox("Browser engine", ["webkit", "chromium", "firefox"], index=0, help="webkit is often the least detected by TikTok.")
+    tt_headless = st.checkbox("Run browser headless", value=False, help="Headless is detected more easily; leave off if scrapes return empty.")
+    run_tt = st.button("Scrape TikTok", use_container_width=True)
+    st.divider()
+    st.caption("Or import a CSV from an approved social-listening tool.")
     uploaded = st.file_uploader("Import TikTok / other public-post CSV", type=["csv"])
     import_btn = st.button("Import CSV", use_container_width=True)
 
@@ -391,6 +471,32 @@ if run_yt:
             st.success(message)
             for err in errors:
                 st.warning(err)
+
+if run_tt:
+    hashtags = split_terms(tt_hashtags_text)
+    if not hashtags:
+        st.error("Add at least one hashtag to scan.")
+    else:
+        discovered = None
+        with st.spinner("Scraping TikTok… this launches a browser and can take a minute."):
+            try:
+                discovered = tiktok_search(tt_token, hashtags, tt_count, tt_proxy or "", tt_browser, tt_headless)
+            except Exception as e:
+                st.error(f"TikTok scrape failed: {e}")
+        if discovered is not None:
+            errors = [r["__error__"] for r in discovered if "__error__" in r]
+            videos = [r for r in discovered if "__error__" not in r]
+            results = [upsert_post(row, movie_terms, characters, exclude_turkish) for row in videos]
+            saved = results.count("saved")
+            turkish = results.count("turkish")
+            message = f"Retrieved {len(videos)} TikTok videos; saved/updated {saved} candidate records."
+            if turkish:
+                message += f" Excluded {turkish} Turkish-language video(s)."
+            st.success(message)
+            for err in errors:
+                st.warning(err)
+            if not videos and not errors:
+                st.info("No videos returned. TikTok is likely blocking the request — add a proxy or refresh your ms_token.")
 
 if import_btn:
     if uploaded is None:
