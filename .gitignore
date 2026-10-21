@@ -1,0 +1,12 @@
+# Python
+.venv/
+__pycache__/
+*.pyc
+
+# App data
+spoiler_monitor.db
+*.db
+
+# OS
+.DS_Store
+Thumbs.db

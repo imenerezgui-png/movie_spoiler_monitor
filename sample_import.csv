@@ -1,0 +1,3 @@
+platform,platform_id,url,creator,published_at,title,text
+TikTok,example123,https://www.tiktok.com/,sample_creator,2026-10-20,Example movie spoiler review,"The ending reveals the killer is the protagonist"
+YouTube,abc123,https://www.youtube.com/watch?v=abc123,sample_channel,2026-10-20,Movie review with no spoilers,"A fun review with no spoilers"
