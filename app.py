@@ -378,9 +378,10 @@ def _tiktok_row(d: dict) -> dict:
     }
 
 def tiktok_search(ms_token: str, hashtags: list[str], count: int = 30, proxy: str = "",
-                  browser: str = "chromium", headless: bool = True):
+                  browser: str = "chromium", headless: bool = True, sessionid: str = ""):
     """Collect recent PUBLIC videos for the given hashtags via the unofficial TikTokApi scraper.
-    Needs an ms_token cookie from a logged-in tiktok.com session and installed Playwright browsers."""
+    Authenticates with a logged-in 'sessionid' cookie and/or an ms_token; a sessionid is usually
+    less bot-flagged. Needs installed Playwright browsers."""
     try:
         from TikTokApi import TikTokApi
     except Exception:
@@ -395,11 +396,18 @@ def tiktok_search(ms_token: str, hashtags: list[str], count: int = 30, proxy: st
     if not headless and sys.platform.startswith("linux") and not os.environ.get("DISPLAY"):
         headless = True
 
+    cookie = {}
+    if sessionid:
+        cookie["sessionid"] = sessionid
+    if ms_token:
+        cookie["msToken"] = ms_token
+
     async def _run():
         rows = []
         async with TikTokApi() as api:
             await api.create_sessions(
-                ms_tokens=[ms_token] if ms_token else None,
+                ms_tokens=None,
+                cookies=[cookie] if cookie else None,
                 num_sessions=1,
                 sleep_after=3,
                 browser=browser,
@@ -456,7 +464,8 @@ with st.sidebar:
     st.divider()
     st.header("TikTok collection")
     st.caption("Unofficial scraper (TikTokApi). Reads only public data, may need a proxy, and breaks when TikTok changes.")
-    tt_token = st.text_input("TikTok ms_token (from your tiktok.com cookies)", type="password", value=secret("TIKTOK_MS_TOKEN"), help="Log into tiktok.com, open DevTools > Application > Cookies, copy the value of 'msToken'.")
+    tt_sessionid = st.text_input("TikTok sessionid (recommended — less bot-flagged)", type="password", value=secret("TIKTOK_SESSIONID"), help="Log into tiktok.com, open DevTools > Application > Cookies, copy the value of 'sessionid'.")
+    tt_token = st.text_input("TikTok ms_token (optional, used with sessionid)", type="password", value=secret("TIKTOK_MS_TOKEN"), help="Optional. Copy the 'msToken' cookie value from tiktok.com.")
     tt_hashtags_text = st.text_area("Hashtags to scan (one per line, without #)", value=DEFAULT_CONFIG["tiktok_hashtags"])
     tt_count = st.slider("Videos per hashtag", min_value=10, max_value=100, value=30, step=10)
     tt_proxy = st.text_input("Proxy URL (optional, recommended)", value=secret("TIKTOK_PROXY"), placeholder="http://user:pass@host:port")
@@ -510,7 +519,7 @@ if run_tt:
         discovered = None
         with st.spinner("Scraping TikTok… this launches a browser and can take a minute."):
             try:
-                discovered = tiktok_search(tt_token, hashtags, tt_count, tt_proxy or "", tt_browser, tt_headless)
+                discovered = tiktok_search(tt_token, hashtags, tt_count, tt_proxy or "", tt_browser, tt_headless, tt_sessionid)
             except Exception as e:
                 st.error(f"TikTok scrape failed: {e}")
         if discovered is not None:

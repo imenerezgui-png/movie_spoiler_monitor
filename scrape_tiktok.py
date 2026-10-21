@@ -38,10 +38,11 @@ def main():
     p.add_argument("--out", default=None, help="Output CSV path.")
     args = p.parse_args()
 
+    sessionid = os.getenv("TIKTOK_SESSIONID") or ""
     ms_token = os.getenv("TIKTOK_MS_TOKEN") or os.getenv("ms_token") or ""
-    if not ms_token:
-        print("WARNING: no TIKTOK_MS_TOKEN set — scrapes are much more likely to be blocked.")
-        print('  Set it first:  $env:TIKTOK_MS_TOKEN="<your msToken cookie>"\n')
+    if not sessionid and not ms_token:
+        print("WARNING: no TIKTOK_SESSIONID or TIKTOK_MS_TOKEN set — scrapes are much more likely to be blocked.")
+        print('  A logged-in sessionid works best:  $env:TIKTOK_SESSIONID="<your sessionid cookie>"\n')
 
     ns = load_app_namespace()
     tiktok_search = ns["tiktok_search"]
@@ -50,7 +51,7 @@ def main():
     hashtags = [h.strip() for h in args.hashtags.replace("\n", ",").split(",") if h.strip()]
     print(f"Scraping {len(hashtags)} hashtag(s) with {args.browser}: {', '.join(hashtags)}")
 
-    rows = tiktok_search(ms_token, hashtags, args.count, args.proxy, args.browser, args.headless)
+    rows = tiktok_search(ms_token, hashtags, args.count, args.proxy, args.browser, args.headless, sessionid)
     errors = [r["__error__"] for r in rows if "__error__" in r]
     videos = [r for r in rows if "__error__" not in r]
 
