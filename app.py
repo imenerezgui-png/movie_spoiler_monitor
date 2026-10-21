@@ -85,7 +85,26 @@ TURKISH_WORDS = {
 }
 
 # Digits used as letters (7ra9, 9atel, mta3) are a strong Tunisian Arabizi signal.
-ARABIZI_HINT = re.compile(r"[a-z][23579]|[23579][a-z]")
+ARABIZI_HINT = re.compile(r"[a-z][379]|[379][a-z]")
+
+# Distinctive, non-Turkish vocabulary that marks a genuinely relevant post.
+# If any of these appear, the post is kept even if a title looks ambiguous.
+RELEVANCE_KEEP = {
+    # English spoiler/movie vocab (Turkish uses film/fragman/son, not these)
+    "ending", "explained", "review", "trailer", "teaser", "reaction", "recap",
+    "dies", "death", "killer", "murderer", "twist", "plot", "who", "spoiler",
+    "spoilers", "spoil", "movie", "cinema", "scene", "breakdown", "theory",
+    # French spoiler/movie vocab
+    "critique", "avis", "bande", "annonce", "fin", "sortie", "streaming",
+    "complet", "resume", "résumé", "scène", "acteur", "actrice", "personnage",
+    "histoire", "analyse", "réaction", "premiere", "première", "cinéma", "salle",
+    # Tunisian Arabizi (non-digit markers)
+    "chkon", "chkoun", "ymout", "barcha", "behi", "mezyen", "yezzi", "famma",
+}
+
+# Music-clip markers: the Turkish "Bakma" flood is mostly songs, not movie content.
+MUSIC_PHRASES = ("official video", "music video", "official music video",
+                 "lyric video", "video klip", "klip", "audio)", "(audio")
 
 # Accurate language detection restricted to the languages that actually occur here.
 # Loaded lazily and treated as optional so the app still runs if lingua is missing.
@@ -106,30 +125,49 @@ def _get_detector():
         _LANG_DETECTOR = None
     return _LANG_DETECTOR
 
-def is_turkish(title: str, body: str) -> bool:
+def is_turkish(title: str, body: str = "") -> bool:
     """Drop unrelated 'bakma' (Turkish for 'don't look') hits that flood the results."""
-    text = norm(f"{title} {body}")
-    if not text:
+    title_n = norm(title)
+    combined = norm(f"{title} {body}")
+    if not combined:
         return False
     # Arabic script present -> target-language content, never treat as Turkish.
-    if re.search(r"[\u0600-\u06ff]", text):
+    if re.search(r"[\u0600-\u06ff]", combined):
         return False
     # Tunisian Arabizi (digits-as-letters) -> target-language content, never exclude.
-    if ARABIZI_HINT.search(text):
+    if ARABIZI_HINT.search(combined):
         return False
+    words = set(re.findall(r"[a-zçöüışğ]+", combined))
+    # Distinctive relevant vocabulary -> keep, even if the title looks ambiguous.
+    if words & RELEVANCE_KEEP:
+        return False
+    # Music-clip markers with no movie relevance -> a song, drop it.
+    if any(p in combined for p in MUSIC_PHRASES):
+        return True
     # Strong signal: Turkish-specific letters (ı, ş, ğ).
-    if any(ch in TURKISH_LETTERS for ch in text):
+    if any(ch in TURKISH_LETTERS for ch in combined):
         return True
-    words = re.findall(r"[a-zçöüışğ]+", text)
-    if sum(1 for w in words if w in TURKISH_WORDS) >= 1:
+    # Any distinctive Turkish stopword -> drop.
+    if words & TURKISH_WORDS:
         return True
-    # Statistical detector constrained to tr/ar/fr/en handles plain-Latin titles.
+    # Statistical detector. The title is the decisive signal; descriptions are
+    # often English boilerplate (Spotify/Apple links, "subscribe") that misleads.
     detector = _get_detector()
-    if detector is not None and len(text) >= 5:
+    if detector is not None:
         try:
             from lingua import Language
-            if detector.detect_language_of(text) == Language.TURKISH:
-                return True
+            for probe in (title_n, combined):
+                if len(probe) < 4:
+                    continue
+                conf = detector.compute_language_confidence_values(probe)
+                if not conf:
+                    continue
+                if conf[0].language == Language.TURKISH:
+                    return True
+                tr = next((c.value for c in conf if c.language == Language.TURKISH), 0.0)
+                # No relevance signal and Turkish is plausible -> drop (aggressive).
+                if tr >= 0.20:
+                    return True
         except Exception:
             pass
     return False
