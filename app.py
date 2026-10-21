@@ -5,6 +5,7 @@ import json
 import sqlite3
 from datetime import datetime, timezone
 from typing import Any
+from urllib.parse import urlparse, unquote
 
 import pandas as pd
 import requests
@@ -339,6 +340,26 @@ def youtube_search(api_key: str, query: str, max_results: int = 25):
 
 _PLAYWRIGHT_READY = set()
 
+def _parse_proxy(proxy: str):
+    """Convert 'scheme://user:pass@host:port' into the proxy dict Playwright expects."""
+    proxy = (proxy or "").strip()
+    if not proxy:
+        return None
+    if "://" not in proxy:
+        proxy = "http://" + proxy
+    parsed = urlparse(proxy)
+    if not parsed.hostname:
+        return None
+    server = f"{parsed.scheme}://{parsed.hostname}"
+    if parsed.port:
+        server += f":{parsed.port}"
+    settings = {"server": server}
+    if parsed.username:
+        settings["username"] = unquote(parsed.username)
+    if parsed.password:
+        settings["password"] = unquote(parsed.password)
+    return settings
+
 def ensure_playwright_browser(browser: str) -> None:
     """Download the Playwright browser binary on demand (for servers like Streamlit Cloud)."""
     if browser in _PLAYWRIGHT_READY:
@@ -402,6 +423,8 @@ def tiktok_search(ms_token: str, hashtags: list[str], count: int = 30, proxy: st
     if ms_token:
         cookie["msToken"] = ms_token
 
+    proxy_settings = _parse_proxy(proxy)
+
     async def _run():
         rows = []
         async with TikTokApi() as api:
@@ -412,7 +435,7 @@ def tiktok_search(ms_token: str, hashtags: list[str], count: int = 30, proxy: st
                 sleep_after=3,
                 browser=browser,
                 headless=headless,
-                proxies=[proxy] if proxy else None,
+                proxies=[proxy_settings] if proxy_settings else None,
             )
             for tag in hashtags:
                 name = tag.lstrip("#").strip()
