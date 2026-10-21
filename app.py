@@ -32,7 +32,7 @@ SPOILER_TERMS = {
         "يموت في النهاية", "تموت في النهاية", "القاتل هو", "النهاية تكشف",
         "المفاجأة هي", "في المشهد الأخير", "يتضح أنه", "تتضح أنها",
         # Tunisian / Arabizi common spellings (starter examples)
-        "yemout fel lekher", "t emout fel lekher", "el 9atel howa",
+        "ymout fel lekher", "tmout fel lekher", "el 9atel howa",
         "fil ekher", "twist mta3 el film", "yطلع howa"
     ],
     "medium": [
@@ -42,7 +42,7 @@ SPOILER_TERMS = {
         "mort du personnage", "la vraie identité", "la fin du film",
         "حرق", "حرق الفيلم", "شرح النهاية", "ملخص الفيلم", "من هو القاتل",
         "spoiler", "spoilers", "spoilers alert", "spoil",
-        "7ra9", "7ra9 el film", "chkon yemout", "chkoun howa el 9atel"
+        "7ra9", "7ra9 el film", "chkon ymout", "chkoun howa el 9atel"
     ],
     "low": [
         "movie review", "film review", "trailer", "teaser", "official trailer",
@@ -53,9 +53,9 @@ SPOILER_TERMS = {
 
 DEFAULT_CONFIG = {
     "movie_title": "BAKMA",
-    "aliases": "BAKMA, باكما, #BAKMA, #BakmaFilm, #Bakma, Bakma film, Bakma movie, film Bakma, فيلم باكما",
+    "aliases": "BAKMA, باكما, بكمة, بكما, #BAKMA, #BakmaFilm, #Bakma, #بكمة, #بكما, Bakma film, Bakma movie, film Bakma, فيلم بكمة, فيلم بكما, فيلم باكما",
     "characters": "",
-    "youtube_queries": "BAKMA film\nBAKMA spoiler\nBAKMA ending\nفيلم باكما\nباكما حرق\nBAKMA 7ra9\nBakma fin du film\n#BAKMA",
+    "youtube_queries": "BAKMA film\nBAKMA spoiler\nBAKMA ending\nفيلم بكمة\nفيلم بكما\nبكمة حرق\nبكما حرق\nBAKMA 7ra9\nBakma fin du film\n#BAKMA\n#بكمة\n#بكما",
 }
 
 def now_iso():
