@@ -6,6 +6,7 @@ __pycache__/
 # App data
 spoiler_monitor.db
 *.db
+tiktok_bakma_*.csv
 
 # OS
 .DS_Store
