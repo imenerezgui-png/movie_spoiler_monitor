@@ -70,6 +70,33 @@ def norm(value: Any) -> str:
 def split_terms(value: str):
     return [x.strip() for x in re.split(r"[\n,;|]+", value or "") if x.strip()]
 
+# "bakma" means "don't look" in Turkish, so Turkish videos flood the results.
+# These lowercase letters appear in Turkish but not in French, English, Arabic, or Arabizi.
+TURKISH_LETTERS = set("ışğ")
+TURKISH_WORDS = {
+    "ve", "bir", "bu", "için", "ile", "değil", "çok", "daha", "gibi", "ama",
+    "ben", "sen", "onu", "yok", "var", "kadar", "sonra", "önce", "şey",
+    "nasıl", "neden", "yani", "tamam", "evet", "hayır", "izle", "izleyin",
+    "fragman", "fragmanı", "altyazılı", "türkçe", "türk", "bölüm", "dizi",
+    "filmi", "filmin", "filmini", "konusu", "oyuncular", "sahnesi", "sonu",
+    "gözlerime", "bana", "aşk", "sevgi", "duygusal", "yeni", "klip", "şarkı",
+}
+
+def is_turkish(title: str, body: str) -> bool:
+    """Heuristic Turkish detector to drop unrelated 'bakma' (Turkish for 'don't look') hits."""
+    text = norm(f"{title} {body}")
+    if not text:
+        return False
+    # Arabic script present -> target-language content, never treat as Turkish.
+    if re.search(r"[\u0600-\u06ff]", text):
+        return False
+    # Strong signal: Turkish-specific letters (ı, ş, ğ).
+    if any(ch in TURKISH_LETTERS for ch in text):
+        return True
+    # Word signal: two or more distinctive Turkish stopwords.
+    words = re.findall(r"[a-zçöüışğ]+", text)
+    return sum(1 for w in words if w in TURKISH_WORDS) >= 2
+
 def make_url(platform: str, video_id: str, supplied_url: str = "") -> str:
     if supplied_url and supplied_url.strip():
         return supplied_url.strip()
@@ -156,7 +183,7 @@ def score_post(title: str, body: str, movie_terms: list[str], characters: list[s
         risk = "Not scored"
     return score, risk, sorted(set(matched))
 
-def upsert_post(row: dict, movie_terms: list[str], characters: list[str]):
+def upsert_post(row: dict, movie_terms: list[str], characters: list[str], exclude_turkish: bool = True):
     title = str(row.get("title", "") or "")
     body = str(row.get("text", "") or row.get("description", "") or row.get("caption", "") or "")
     platform = str(row.get("platform", "Manual import") or "Manual import").strip()
@@ -164,9 +191,11 @@ def upsert_post(row: dict, movie_terms: list[str], characters: list[str]):
     url = make_url(platform, platform_id, str(row.get("url", "") or ""))
     creator = str(row.get("creator", row.get("channel_title", row.get("username", ""))) or "")
     published = str(row.get("published_at", row.get("publishedAt", "")) or "")
+    if exclude_turkish and is_turkish(title, body):
+        return "turkish"
     score, risk, matched = score_post(title, body, movie_terms, characters)
     if score == 0:
-        return False
+        return "skipped"
 
     with sqlite3.connect(DB_PATH) as con:
         con.execute("""
@@ -187,7 +216,7 @@ def upsert_post(row: dict, movie_terms: list[str], characters: list[str]):
             json.dumps(matched, ensure_ascii=False), score, risk, "Needs review", now_iso()
         ))
         con.commit()
-    return True
+    return "saved"
 
 def youtube_search(api_key: str, query: str, max_results: int = 25):
     """Search public YouTube video metadata. This does not fetch arbitrary video transcripts."""
@@ -241,6 +270,7 @@ with st.sidebar:
     aliases_text = st.text_area("Alternate titles / hashtags (comma-separated)", value=DEFAULT_CONFIG["aliases"], placeholder="title in French, Arabic title, #MovieName")
     characters_text = st.text_area("Character names / aliases (comma-separated)", value=DEFAULT_CONFIG["characters"], placeholder="Character A, Character B")
     st.caption("Use exact names and common spellings. Include Arabic script and Arabizi variants when relevant.")
+    exclude_turkish = st.checkbox("Exclude Turkish-language posts", value=True, help="‘bakma’ means ‘don’t look’ in Turkish, which floods results with unrelated videos.")
     st.divider()
     st.header("YouTube collection")
     yt_key = st.text_input("YouTube Data API key", type="password", value=os.getenv("YOUTUBE_API_KEY", ""))
@@ -277,8 +307,13 @@ if run_yt:
                 except Exception as e:
                     errors.append(f"{query}: {e}")
                 progress.progress((i + 1) / len(queries))
-            saved = sum(1 for row in discovered if upsert_post(row, movie_terms, characters))
-            st.success(f"Retrieved {len(discovered)} YouTube videos; saved/updated {saved} candidate records.")
+            results = [upsert_post(row, movie_terms, characters, exclude_turkish) for row in discovered]
+            saved = results.count("saved")
+            turkish = results.count("turkish")
+            message = f"Retrieved {len(discovered)} YouTube videos; saved/updated {saved} candidate records."
+            if turkish:
+                message += f" Excluded {turkish} Turkish-language video(s)."
+            st.success(message)
             for err in errors:
                 st.warning(err)
 
@@ -290,8 +325,13 @@ if import_btn:
             imported = pd.read_csv(uploaded).fillna("")
             # Supported columns: platform, platform_id/id/video_id, url, creator/username/channel_title,
             # published_at/publishedAt, title, text/description/caption.
-            count = sum(1 for _, r in imported.iterrows() if upsert_post(r.to_dict(), movie_terms, characters))
-            st.success(f"Read {len(imported)} rows; saved/updated {count} candidate records.")
+            results = [upsert_post(r.to_dict(), movie_terms, characters, exclude_turkish) for _, r in imported.iterrows()]
+            count = results.count("saved")
+            turkish = results.count("turkish")
+            message = f"Read {len(imported)} rows; saved/updated {count} candidate records."
+            if turkish:
+                message += f" Excluded {turkish} Turkish-language row(s)."
+            st.success(message)
         except Exception as e:
             st.error(f"Could not import CSV: {e}")
 
